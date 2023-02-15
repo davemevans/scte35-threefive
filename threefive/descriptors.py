@@ -1,6 +1,7 @@
 """
 SCTE35 Splice Descriptors
 """
+import xml.etree.ElementTree as ET
 from .bitn import BitBin
 from .base import SCTE35Base
 from .segmentation import table20, table22
@@ -134,6 +135,9 @@ class AudioDescriptor(SpliceDescriptor):
             a_c += 1
         return nbin.bites
 
+    def element(self):
+        raise NotImplementedError("AudioDescriptor not implemented")
+
 
 class AvailDescriptor(SpliceDescriptor):
     """
@@ -159,6 +163,11 @@ class AvailDescriptor(SpliceDescriptor):
         nbin = super().encode(nbin)
         self._chk_var(int, nbin.add_int, "provider_avail_id", 32)
         return nbin.bites
+
+    def element(self):
+        return ET.Element("AvailDescriptor", {
+            "providerAvailId": str(self.provider_avail_id)
+        })
 
 
 class DtmfDescriptor(SpliceDescriptor):
@@ -196,6 +205,9 @@ class DtmfDescriptor(SpliceDescriptor):
             d_c += 1
         return nbin.bites
 
+    def element(self):
+        raise NotImplementedError("DTMFDescriptor not implemented")
+
 
 class TimeDescriptor(SpliceDescriptor):
     """
@@ -228,6 +240,9 @@ class TimeDescriptor(SpliceDescriptor):
         self._chk_var(int, nbin.add_int, "tai_ns", 32)
         self._chk_var(int, nbin.add_int, "utc_offset", 16)
         return nbin.bites
+
+    def element(self):
+        raise NotImplementedError("TimeDescriptor not implemented")
 
 
 class SegmentationDescriptor(SpliceDescriptor):
@@ -394,6 +409,84 @@ class SegmentationDescriptor(SpliceDescriptor):
             self._chk_var(int, nbin.add_int, "sub_segment_num", 8)  # 1 byte
             self._chk_var(int, nbin.add_int, "sub_segments_expected", 8)  # 1 byte
 
+    def element(self):
+        el = ET.Element("SegmentationDescriptor", {
+            "segmentationEventId": str(int(self.segmentation_event_id, 16)),
+            "segmentationEventCancelIndicator": str(self.segmentation_event_cancel_indicator).lower(),
+        })
+
+        if not self.segmentation_event_cancel_indicator:
+            el.set("segmentNum", str(self.segment_num))
+            el.set("segmentsExpected", str(self.segments_expected))
+            if self.segmentation_type_id in [0x34, 0x36, 0x38, 0x3A]:
+                el.set("subSegmentNum", str(self.sub_segment_num))
+                el.set("subSegmentsExpected", str(self.sub_segments_expected))
+
+            if self.segmentation_duration_flag:
+                if not self.segmentation_duration_ticks:
+                    self.segmentation_duration_ticks = 0
+                if self.segmentation_duration:
+                    self.segmentation_duration_ticks = self.as_ticks(
+                        self.segmentation_duration
+                    )
+                el.set("segmentationDuration", str(self.segmentation_duration_ticks))
+                el.set("segmentationTypeId", str(self.segmentation_type_id))
+
+            if not self.delivery_not_restricted_flag:
+                ET.SubElement(el, "DeliveryRestrictions", {
+                    "webDeliveryAllowedFlag": str(self.web_delivery_allowed_flag).lower(),
+                    "noRegionalBlackoutFlag": str(self.no_regional_blackout_flag).lower(),
+                    "archiveAllowedFlag": str(self.archive_allowed_flag).lower(),
+                    "deviceRestrictions": str(k_by_v(table20, self.device_restrictions))
+                })
+
+            # TODO: this needs revisiting with examples
+            if self.segmentation_upid_type != 0:
+                upid = [{
+                    "upid_type": self.segmentation_upid_type,
+                    "segmentation_upid": self.segmentation_upid
+                }] if self.segmentation_upid_type != 13 else self.segmentation_upid
+
+                for u in upid:
+                    sel = ET.Element("SegmentationUpid", {
+                        "segmentationUpidType": str(u["upid_type"]),
+                        "segmentationUpidFormat": str({
+                            0x01: "text",
+                            0x02: "text",
+                            0x03: "text",
+                            0x04: "text",
+                            0x05: "base-64",
+                            0x06: "base-64",
+                            0x07: "text",
+                            0x08: "hexbinary",
+                            0x09: "hexbinary",
+                            0x10: "text",
+                            0x11: "text",
+                            0x0A: "text",
+                            0x0B: "base-64",
+                            0x0C: "base-64",
+                            0x0E: "text",
+                            0x0F: "text",
+                            0x11: "text"
+                        }[u["upid_type"]])
+                    })
+                    if u["upid_type"] == 12:
+                        sel.set("formatIdentifier", str(u["segmentation_upid"]["format_identifier"]))
+                        sel.text = str(u["segmentation_upid"]["private_data"])
+                    else:
+                        # TODO: this is clearly not right
+                        sel.text = str(u["segmentation_upid"])
+
+                    el.append(sel)
+
+            if not self.program_segmentation_flag:
+                for comp in self.components:
+                    ET.SubElement(el, "Component", {
+                        "componentTag": str(comp["component_tag"]),
+                        "ptsOffset": str(comp["pts_offset"])
+                    })
+
+        return el
 
 # map of known descriptors and associated classes
 descriptor_map = {

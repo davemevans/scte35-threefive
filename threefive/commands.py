@@ -3,6 +3,7 @@ SCTE35 Splice Commands
 """
 from .bitn import BitBin
 from .base import SCTE35Base
+import xml.etree.ElementTree as ET
 
 
 class SpliceCommand(SCTE35Base):
@@ -51,6 +52,9 @@ class BandwidthReservation(SpliceCommand):
         BandwidthReservation.decode method
         """
 
+    def element(self):
+        return ET.Element("BandwidthReservation")
+
 
 class PrivateCommand(SpliceCommand):
     """
@@ -80,6 +84,9 @@ class PrivateCommand(SpliceCommand):
         self._chk_var(int, nbin.add_int, "identifier", 24)  # 3 bytes = 24 bits
         return nbin.bites
 
+    def element(self):
+        raise NotImplementedError("PrivateCommand element not implemented")
+
 
 class SpliceNull(SpliceCommand):
     """
@@ -90,6 +97,9 @@ class SpliceNull(SpliceCommand):
         super().__init__(bites)
         self.command_type = 0
         self.name = "Splice Null"
+
+    def element(self):
+        return ET.Element("SpliceNull")
 
 
 class TimeSignal(SpliceCommand):
@@ -148,6 +158,14 @@ class TimeSignal(SpliceCommand):
             self._chk_var(int, nbin.add_int, "pts_time_ticks", 33)
         else:
             nbin.reserve(7)
+
+    def element(self):
+        el = ET.Element("TimeSignal")
+        if self.time_specified_flag:
+            ET.SubElement(el, "SpliceTime", {
+                "ptsTime": str(self.pts_time_ticks)
+            })
+        return el
 
 
 class SpliceInsert(TimeSignal):
@@ -310,6 +328,57 @@ class SpliceInsert(TimeSignal):
         self._chk_var(int, nbin.add_int, "avail_num", 8)
         self._chk_var(int, nbin.add_int, "avail_expected", 8)
 
+    def element(self):
+        el = ET.Element("SpliceInsert", {
+            "spliceEventId": str(self.splice_event_id),
+            "spliceEventCancelIndicator": str(self.splice_event_cancel_indicator).lower(),
+            "uniqueProgramId": str(self.unique_program_id),
+            "availNum": str(self.avail_num),
+            "availsExpected": str(self.avail_expected)
+        })
+
+        if not self.splice_event_cancel_indicator:
+            el.set("outOfNetworkIndicator", str(self.out_of_network_indicator).lower())
+            el.set("spliceImmediateFlag", str(self.splice_immediate_flag).lower())
+
+            if self.program_splice_flag:
+                prg = ET.SubElement(el, "Program")
+
+                if not self.splice_immediate_flag:
+                    if not self.pts_time_ticks:
+                        self.pts_time_ticks = 0
+                    if self.pts_time:
+                        self.pts_time_ticks = self.as_ticks(self.pts_time)
+                    spt = ET.SubElement(prg, "SpliceTime", {
+                        "ptsTime": str(self.pts_time_ticks)
+                    })
+            else:
+                for comp in self.components:
+                    cmp = ET.SubElement(el, "Component", {
+                        "componentTag": str(comp)
+                    })
+
+                    if not self.splice_immediate_flag:
+                        if not self.pts_time_ticks:
+                            self.pts_time_ticks = 0
+                        if self.pts_time:
+                            self.pts_time_ticks = self.as_ticks(self.pts_time)
+                        spt = ET.SubElement(cmp, "SpliceTime", {
+                            "ptsTime": str(self.pts_time_ticks)
+                        })
+
+            if self.duration_flag:
+                if not self.break_duration_ticks:
+                    self.break_duration_ticks = 0
+                if self.break_duration:
+                    self.break_duration_ticks = self.as_ticks(self.break_duration)
+                ET.SubElement(el, "BreakDuration", {
+                    "autoReturn": str(self.break_auto_return).lower(),
+                    "duration": str(self.break_duration_ticks)
+                })
+
+        return el
+
 
 class SpliceSchedule(SpliceCommand):
     """
@@ -377,6 +446,9 @@ class SpliceSchedule(SpliceCommand):
             self.splices[i] = self.SpliceEvent()
             self.splices[i].decode(bitbin)
         self._set_len(start, bitbin.idx)
+
+    def element(self):
+        raise NotImplementedError("SpliceSchedule element not implemented")
 
 
 command_map = {

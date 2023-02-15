@@ -3,6 +3,7 @@ threefive.Cue Class
 """
 from base64 import b64decode, b64encode
 import json
+import xml.etree.ElementTree as ET
 from sys import stderr
 from .bitn import NBin
 from .base import SCTE35Base
@@ -241,6 +242,26 @@ class Cue(SCTE35Base):
         a hex string
         """
         return hex(self.encode_as_int())
+
+    def encode_as_xml(self):
+        element = ET.Element("SpliceInfoSection", {
+            "ptsAdjustment": str(self.info_section.pts_adjustment_ticks),
+            "protocolVersion": str(self.info_section.protocol_version),
+        })
+
+        if self.info_section.tier is not None:
+            element.set("tier", str(int(self.info_section.tier, 16)))
+
+        if self.info_section.sap_type is not None:
+            element.set("sapType", str(int(self.info_section.sap_type, 16)))
+
+        if self.command is not None:
+            element.append(self.command.element())
+
+        for desc in self.descriptors:
+            element.append(desc.element())
+
+        return ET.tostring(element, "utf-8")
 
     def _encode_crc(self):
         """

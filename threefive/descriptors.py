@@ -430,7 +430,8 @@ class SegmentationDescriptor(SpliceDescriptor):
                         self.segmentation_duration
                     )
                 el.set("segmentationDuration", str(self.segmentation_duration_ticks))
-                el.set("segmentationTypeId", str(self.segmentation_type_id))
+
+            el.set("segmentationTypeId", str(self.segmentation_type_id))
 
             if not self.delivery_not_restricted_flag:
                 ET.SubElement(el, "DeliveryRestrictions", {

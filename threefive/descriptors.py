@@ -5,7 +5,7 @@ SCTE35 Splice Descriptors
 from .bitn import BitBin
 from .base import SCTE35Base
 from .segmentation import table20, table22, dvb_table2
-from .upids import upid_map
+from .upids import mk_upid, upid_map
 from .xml import Node
 
 
@@ -370,7 +370,9 @@ class SegmentationDescriptor(SpliceDescriptor):
             self.segmentation_duration = self.as_90k(segmentation_duration_ticks)
         self.segmentation_upid_type = bitbin.as_int(8)
         self.segmentation_upid_length = bitbin.as_int(8)
-        the_upid = self.mk_the_upid(bitbin)
+        the_upid = mk_upid(self.segmentation_upid_type,
+                         self.segmentation_upid_length,
+                         bitbin)
         self.segmentation_upid_type_name, self.segmentation_upid = the_upid.decode()
         self.segmentation_type_id = bitbin.as_int(8)
         if self.segmentation_type_id in table22:
@@ -429,27 +431,14 @@ class SegmentationDescriptor(SpliceDescriptor):
         else:
             nbin.reserve(5)
 
-    def mk_the_upid(self, bitbin=None):
-        """
-        mk_the_upid create a upid instance
-        and return it. the bitbin arg is only
-        used in decode()
-        """
-        upid_type = self.segmentation_upid_type
-        if upid_type not in upid_map:
-            upid_type = 0xFD
-        the_upid = upid_map[upid_type][1](
-            bitbin, upid_type, self.segmentation_upid_length
-        )
-        return the_upid
-
     def _encode_segmentation(self, nbin):
         if self.segmentation_duration_flag:
             nbin.add_int(self.as_ticks(self.segmentation_duration), 40)
         self._chk_var(int, nbin.add_int, "segmentation_upid_type", 8)
         self._chk_var(int, nbin.add_int, "segmentation_upid_length", 8)
         upid_type = self.segmentation_upid_type
-        the_upid = self.mk_the_upid()
+        the_upid = mk_upid(self.segmentation_upid_type,
+                         self.segmentation_upid_length)
         the_upid.upid_value = self.segmentation_upid
         the_upid.encode(nbin)
         self._chk_var(int, nbin.add_int, "segmentation_type_id", 8)
@@ -487,7 +476,8 @@ class SegmentationDescriptor(SpliceDescriptor):
             )
         sd = Node("SegmentationDescriptor", attrs=sd_attrs)
        # sd.add_comment(f'{table22[self.segmentation_type_id]}') # Called in cue.py
-        the_upid = self.mk_the_upid()
+        the_upid = mk_upid(self.segmentation_upid_type,
+                         self.segmentation_upid_length)
         the_upid.upid_value = self.segmentation_upid
         upid_node = the_upid.xml()
         if not self.delivery_not_restricted_flag:
@@ -504,7 +494,9 @@ class SegmentationDescriptor(SpliceDescriptor):
                     },
                 )
             )
-        sd.add_comment(f'UPID: {upid_map[self.segmentation_upid_type][0]}')
+        # if it's a MID, there will be multiple UPIDs, so don't print type here
+        if self.segmentation_upid_type != 0x0D:
+            sd.add_comment(f'UPID: {upid_map[self.segmentation_upid_type][0]}')
 
         if isinstance(upid_node, list):
             for node in upid_node:

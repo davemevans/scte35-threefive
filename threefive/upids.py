@@ -10,7 +10,7 @@ cyclomatic complexity 1.65625
 
 """
 
-from .xml import Node
+from .xml import Comment, Node
 from .bitn import NBin
 
 charset = "ascii"  # this isn't a constant pylint.
@@ -235,9 +235,8 @@ class Mid(Upid):
             ulb -= 8
             upid_length = self.bitbin.as_int(8)
             ulb -= 8
-            upid_type_name, segmentation_upid = upid_map[upid_type][1](
-                self.bitbin, upid_type, upid_length
-            ).decode()
+            the_upid = mk_upid(upid_type, upid_length, self.bitbin)
+            upid_type_name, segmentation_upid = the_upid.decode()
             mid_upid = {
                 "upid_type": upid_type,
                 "upid_type_name": upid_type_name,
@@ -268,13 +267,11 @@ class Mid(Upid):
         """
         mid_nodes = []
         for u in self.upid_value:
-            u_attrs = {
-                "upid_type": u["upid_type"],
-                "name": u["upid_type_name"],
-            }
-            value = u["segmentation_upid"]
-            node = Node("SegmentationUpid", attrs=u_attrs, value=value)
-            mid_nodes.append(node)
+            upid_type = u["upid_type"]
+            the_upid = mk_upid(upid_type, u["upid_length"])
+            the_upid.upid_value = u["segmentation_upid"]
+            mid_nodes.append(Comment(f"UPID: {upid_map[upid_type][0]}"))
+            mid_nodes.append(the_upid.xml())
         return mid_nodes
 
 
@@ -356,6 +353,17 @@ class Umid(Upid):
         for chunk in chunks:
             nbin.add_hex(chunk, 32)
 
+def mk_upid(upid_type, length=0, bitbin=None):
+    """
+    mk_upid create a upid instance and return it.
+    the bitbin arg is only used in decode()
+    """
+    if upid_type not in upid_map:
+        upid_type = 0xFD
+    the_upid = upid_map[upid_type][1](
+        bitbin, upid_type, length
+    )
+    return the_upid
 
 upid_map = {
     0x00: ["No UPID", NoUpid],
